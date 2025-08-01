@@ -1,10 +1,14 @@
 import socket
 import threading
 import time
+import pyperclip
+
+def get_local_ip():
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    return local_ip
 
 # --- Configuration ---
-# SERVER_HOST: '0.0.0.0' means the server will listen on all available
-# network interfaces. Use '127.0.0.1' to listen only on localhost.
 SERVER_HOST = '0.0.0.0'
 # SERVER_PORT: The port this node will listen on for incoming connections.
 # Choose a non-privileged port (above 1023).
@@ -17,32 +21,15 @@ DEFAULT_TARGET_PORT = 65432
 
 # --- Server Component Function ---
 def server_thread_function():
-    """
-    This function runs in a separate thread and acts as the server.
-    It listens for incoming connections and echoes back received messages.
-    """
-    # Create a TCP/IP socket
-    # socket.AF_INET: Specifies the IPv4 address family.
-    # socket.SOCK_STREAM: Specifies the TCP protocol (reliable, connection-oriented).
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        # SO_REUSEADDR: Allows the server to bind to the same address and port
-        # immediately after it has been closed, without waiting for a timeout.
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        # Bind the socket to the specified host and port.
         server_socket.bind((SERVER_HOST, SERVER_PORT))
-
-        # Listen for incoming connections.
-        # The argument (e.g., 5) is the maximum number of queued connections
-        # before refusing new connections.
         server_socket.listen(5)
         print(f"[SERVER] Node server started, listening on {SERVER_HOST}:{SERVER_PORT}")
 
         try:
             while True:
                 # Accept a new connection. This call blocks until a client connects.
-                # 'conn' is a NEW socket object representing the connection to THIS client.
-                # 'addr' is a tuple (IP address, port number) of the connecting client.
                 conn, addr = server_socket.accept()
                 with conn: # Use 'with' statement to ensure the connection is closed automatically
                     print(f"[SERVER] Accepted connection from {addr}")
@@ -57,7 +44,7 @@ def server_thread_function():
                         # Decode the received bytes into a UTF-8 string.
                         decoded_data = data.decode('utf-8')
                         print(f"[SERVER] Received from {addr}: {decoded_data}")
-
+                        pyperclip.copy(decoded_data)
                         # Prepare a response message and encode it back to bytes before sending.
                         response_message = f"Echo from Node {SERVER_PORT}: '{decoded_data}'"
                         conn.sendall(response_message.encode('utf-8'))
@@ -70,12 +57,10 @@ def server_thread_function():
             # Ensure the server socket is closed when the function exits.
             server_socket.close()
 
+
+
 # --- Client Component Function ---
 def client_thread_function():
-    """
-    This function runs in the main thread and acts as the client.
-    It prompts the user for a target IP/port and sends messages.
-    """
     while True:
         # Prompt user for the target IP address to connect to.
         target_ip = input("\n[CLIENT] Enter target IP to connect to (or 'quit' to exit client): ")
@@ -95,22 +80,23 @@ def client_thread_function():
                 print(f"[CLIENT] Connected to {target_ip}:{target_port}")
 
                 while True:
-                    # Prompt user for a message to send.
-                    message = input("[CLIENT] Enter message to send (or 'disconnect' to choose new target): ")
-                    if message.lower() == 'disconnect':
-                        break # Break from inner loop to prompt for new target
-
-                    # Encode the string message to bytes and send it to the server.
-                    client_socket.sendall(message.encode('utf-8'))
+                    message = pyperclip.paste()  # Get the current clipboard content.
+                    if message:
+                        print(f"[CLIENT] Sending message to {target_ip}:{target_port}: {message}")
+                        client_socket.sendall(message.encode('utf-8'))
 
                     # Receive data back from the server.
-                    data = client_socket.recv(1024)
-                    if not data:
-                        # If no data is received, the server has closed its connection.
-                        print(f"[CLIENT] Server {target_ip}:{target_port} disconnected.")
-                        break
-                    # Decode the received bytes into a UTF-8 string.
-                    print(f"[CLIENT] Received from {target_ip}:{target_port}: {data.decode('utf-8')}")
+                        data = client_socket.recv(1024)
+                        if not data:
+                            # If no data is received, the server has closed its connection.
+                            print(f"[CLIENT] Server {target_ip}:{target_port} disconnected.")
+                            break
+                        # Decode the received bytes into a UTF-8 string.
+                        print(f"[CLIENT] Received from {target_ip}:{target_port}: {data.decode('utf-8')}")
+                    else:
+                        print("[CLIENT] No message to send. Waiting for new clipboard content...")
+
+                    time.sleep(1)  # Sleep for a second before checking the clipboard again
 
         except ConnectionRefusedError:
             print(f"[CLIENT ERROR] Connection refused. Is the target server running and accessible at {target_ip}:{target_port}?")
@@ -126,9 +112,8 @@ def client_thread_function():
 if __name__ == "__main__":
     # Create a thread for the server component.
     # The 'target' argument specifies the function to be run in the new thread.
+    print(f"[MAIN] Local IP address: {get_local_ip()}")
     server_thread = threading.Thread(target=server_thread_function)
-    # Set the thread as a daemon. This means the program will exit if only
-    # daemon threads are left running (i.e., when the main thread finishes).
     server_thread.daemon = True
     # Start the server thread.
     server_thread.start()
