@@ -19,28 +19,21 @@ SERVER_PORT = 65432
 DEFAULT_TARGET_HOST = '127.0.0.1'
 DEFAULT_TARGET_PORT = 65432
 
-def get_local_ip():
-    host = socket.gethostname()
-    local_ip = socket.gethostbyname_ex(host)
-    filtered_ips = [ip for ip in local_ip[2] if not ip.startswith("127.") and ip.startswith("192.168.1.")]
 
-    if filtered_ips:
-        return filtered_ips[0]
-    else:
-        other_non_loopback_ips = [ip for ip in local_ip[2] if not ip.startswith("127.") and not ip.startswith("192.168.1.")]
-        if other_non_loopback_ips:
-            return other_non_loopback_ips[0]
-        else:
-            print("No suitable non-loopback IP address found.")
-            host = socket.gethostname()
-            local_ip_info = socket.gethostbyname_ex(host)
-            print(f"Hostname: {host}")
-            print(f"Local IP Addresses: {local_ip_info[2]}")
-            print("Returning None.")
-            print("-"*40)
-            print(local_ip_info)
-    return None
-
+def get_local_ip_test():
+    s = None # Initialize s to None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip_address = s.getsockname()[0]
+        return local_ip_address
+    except socket.error as e:
+        print(f"Error getting local IP address: {e}")
+        print("Please check your network connection.")
+        return None
+    finally:
+        if s: 
+            s.close()
 
 # --- Server Component Function ---
 def server_thread_function():
