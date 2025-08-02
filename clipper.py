@@ -128,16 +128,19 @@ def client_thread_function():
                     client_socket.connect((target_ip, target_port))
                     print(f"[CLIENT] Connected to {target_ip}:{target_port}")
 
-                    while True:
-                    # Check if Ctrl+C was detected by the listener
-                        if ctrl_c_event.is_set():
+                    while listener_thread.is_alive():
+                    # Use event.wait(timeout) to prevent busy-waiting
+                    # It will wait for ctrl_c_event to be set, or for 0.1 seconds to pass
+                        event_set = ctrl_c_event.wait(timeout=0.1) 
+
+                        if event_set:
                             print("[CLIENT] Processing Ctrl+C signal...")
                             message = pyperclip.paste()
-                        if message:
-                            print(f"[CLIENT] Sending message to {target_ip}:{target_port}: {message}")
-                            client_socket.sendall(message.encode('utf-8'))
+                            if message:
+                                print(f"[CLIENT] Sending message to {target_ip}:{target_port}: {message}")
+                                client_socket.sendall(message.encode('utf-8'))
 
-                        # Receive data back from the server.
+                            # Receive data back from the server.
                             data = client_socket.recv(1024)
                             if not data:
                                 # If no data is received, the server has closed its connection.
@@ -145,11 +148,12 @@ def client_thread_function():
                                 break
                             # Decode the received bytes into a UTF-8 string.
                             print(f"[CLIENT] Received from {target_ip}:{target_port}: {data.decode('utf-8')}")
-                        else:
-                            print("[CLIENT] No message to send. Waiting for new clipboard content...")
 
-                        time.sleep(1)  # Sleep for a second before checking the clipboard again
+                            ctrl_c_event.clear()
 
+                    if not listener_thread.is_alive():
+                        print("[CLIENT] Keyboard listener stopped, exiting communication loop.")
+                        break 
             except ConnectionRefusedError:
                 print(f"[CLIENT ERROR] Connection refused. Is the target server running and accessible at {target_ip}:{target_port}?")
             except socket.gaierror:
