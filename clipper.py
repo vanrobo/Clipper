@@ -2,34 +2,22 @@ import socket
 import threading
 import time
 import pyperclip
-import sys
-from pynput import keyboard
 
-current_keys = set()
-CtrlandC = {keyboard.Key.ctrl_l, keyboard.KeyCode(char='\x03')}
-ctrl_c_event = threading.Event()
+def get_local_ip():
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    return local_ip
 
-def on_press(key):
-    global current_keys, ctrl_c_event
-    try:
-        current_keys.add(key)
-        if CtrlandC.issubset(current_keys):
-            print("\n[CLIENT] Ctrl+C detected. Copying")
-            ctrl_c_event.set()
-    except AttributeError:
-        # Handle special keys (like Ctrl, Alt, etc.)
-        pass
+# --- Configuration ---
+SERVER_HOST = '0.0.0.0'
+# SERVER_PORT: The port this node will listen on for incoming connections.
+# Choose a non-privileged port (above 1023).
+SERVER_PORT = 65432
 
-def on_release(key):
-    try:
-        current_keys.remove(key)
-    except KeyError:
-        pass
-
-    if key == keyboard.Key.esc:
-        print("Esc key pressed. Stopping listener.")
-        return False # This stops the pynput listener th
-
+# TARGET_HOST/PORT: Default values for the client to attempt connecting to.
+# These can be overridden by user input.
+DEFAULT_TARGET_HOST = '127.0.0.1'
+DEFAULT_TARGET_PORT = 65432
 
 def get_local_ip():
     host = socket.gethostname()
@@ -53,16 +41,6 @@ def get_local_ip():
             print(local_ip_info)
     return None
 
-# --- Configuration ---
-SERVER_HOST = '0.0.0.0'
-# SERVER_PORT: The port this node will listen on for incoming connections.
-# Choose a non-privileged port (above 1023).
-SERVER_PORT = 65432
-
-# TARGET_HOST/PORT: Default values for the client to attempt connecting to.
-# These can be overridden by user input.
-DEFAULT_TARGET_HOST = '127.0.0.1'
-DEFAULT_TARGET_PORT = 65432
 
 # --- Server Component Function ---
 def server_thread_function():
@@ -103,6 +81,7 @@ def server_thread_function():
             server_socket.close()
 
 
+
 # --- Client Component Function ---
 def client_thread_function():
     while True:
@@ -112,65 +91,51 @@ def client_thread_function():
             print("[CLIENT] Client quitting.")
             break
 
-        listener_thread = keyboard.Listener(on_press=on_press, on_release=on_release)
-        listener_thread.daemon = True # Allows program to exit even if this thread is running
-        listener_thread.start()
-
-        while listener_thread.is_alive():
         # Prompt user for the target port, using a default if none is provided.
-            target_port_str = input(f"[CLIENT] Enter target port (default {DEFAULT_TARGET_PORT}): ")
-            target_port = int(target_port_str) if target_port_str.isdigit() else DEFAULT_TARGET_PORT
+        target_port_str = input(f"[CLIENT] Enter target port (default {DEFAULT_TARGET_PORT}): ")
+        target_port = int(target_port_str) if target_port_str.isdigit() else DEFAULT_TARGET_PORT
 
-            try:
-                # Create a TCP/IP socket for the client.
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-                    # Connect to the specified target host and port.
-                    client_socket.connect((target_ip, target_port))
-                    print(f"[CLIENT] Connected to {target_ip}:{target_port}")
+        try:
+            # Create a TCP/IP socket for the client.
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+                # Connect to the specified target host and port.
+                client_socket.connect((target_ip, target_port))
+                print(f"[CLIENT] Connected to {target_ip}:{target_port}")
 
-                    while listener_thread.is_alive():
-                    # Use event.wait(timeout) to prevent busy-waiting
-                    # It will wait for ctrl_c_event to be set, or for 0.1 seconds to pass
-                        event_set = ctrl_c_event.wait(timeout=0.1) 
+                while True:
+                    message = pyperclip.paste()  # Get the current clipboard content.
+                    if message:
+                        print(f"[CLIENT] Sending message to {target_ip}:{target_port}: {message}")
+                        client_socket.sendall(message.encode('utf-8'))
 
-                        if event_set:
-                            print("[CLIENT] Processing Ctrl+C signal...")
-                            message = pyperclip.paste()
-                            if message:
-                                print(f"[CLIENT] Sending message to {target_ip}:{target_port}: {message}")
-                                client_socket.sendall(message.encode('utf-8'))
+                    # Receive data back from the server.
+                        data = client_socket.recv(1024)
+                        if not data:
+                            # If no data is received, the server has closed its connection.
+                            print(f"[CLIENT] Server {target_ip}:{target_port} disconnected.")
+                            break
+                        # Decode the received bytes into a UTF-8 string.
+                        print(f"[CLIENT] Received from {target_ip}:{target_port}: {data.decode('utf-8')}")
+                    else:
+                        print("[CLIENT] No message to send. Waiting for new clipboard content...")
 
-                            # Receive data back from the server.
-                            data = client_socket.recv(1024)
-                            if not data:
-                                # If no data is received, the server has closed its connection.
-                                print(f"[CLIENT] Server {target_ip}:{target_port} disconnected.")
-                                break
-                            # Decode the received bytes into a UTF-8 string.
-                            print(f"[CLIENT] Received from {target_ip}:{target_port}: {data.decode('utf-8')}")
+                    time.sleep(0.25)  # Sleep for a second before checking the clipboard again
 
-                            ctrl_c_event.clear()
+        except ConnectionRefusedError:
+            print(f"[CLIENT ERROR] Connection refused. Is the target server running and accessible at {target_ip}:{target_port}?")
+        except socket.gaierror:
+            print(f"[CLIENT ERROR] Hostname '{target_ip}' could not be resolved. Check the IP address.")
+        except Exception as e:
+            print(f"[CLIENT ERROR] An unexpected error occurred during client operation: {e}")
 
-                    if not listener_thread.is_alive():
-                        print("[CLIENT] Keyboard listener stopped, exiting communication loop.")
-                        break 
-            except ConnectionRefusedError:
-                print(f"[CLIENT ERROR] Connection refused. Is the target server running and accessible at {target_ip}:{target_port}?")
-            except socket.gaierror:
-                print(f"[CLIENT ERROR] Hostname '{target_ip}' could not be resolved. Check the IP address.")
-            except Exception as e:
-                print(f"[CLIENT ERROR] An unexpected error occurred during client operation: {e}")
-
-            print(f"[CLIENT] Disconnected from {target_ip}:{target_port}")
+        print(f"[CLIENT] Disconnected from {target_ip}:{target_port}")
 
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
     # Create a thread for the server component.
     # The 'target' argument specifies the function to be run in the new thread.
-    print(f"[MAIN] Your ip address: {get_local_ip()}")
-    print(f"[MAIN] Use the above IP address to connect from another computer.")
-    print()
+    print(f"[MAIN] Local IP address: {get_local_ip()}")
     server_thread = threading.Thread(target=server_thread_function)
     server_thread.daemon = True
     # Start the server thread.
