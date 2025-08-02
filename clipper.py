@@ -3,11 +3,6 @@ import threading
 import time
 import pyperclip
 
-def get_local_ip():
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    return local_ip
-
 # --- Configuration ---
 SERVER_HOST = '0.0.0.0'
 # SERVER_PORT: The port this node will listen on for incoming connections.
