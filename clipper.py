@@ -20,7 +20,7 @@ DEFAULT_TARGET_HOST = '127.0.0.1'
 DEFAULT_TARGET_PORT = 65432
 
 
-def get_local_ip_test():
+def get_local_ip():
     s = None # Initialize s to None
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
